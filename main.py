@@ -18,6 +18,7 @@ class Dataset:
           self.train = []
           self.test = []
 
+
   def load(self):
       with open(self.filename, 'r') as file:
           csv_reader = reader(file, delimiter=';')
@@ -28,23 +29,27 @@ class Dataset:
                   continue
               self.data.append(row)
 
+
   def normalize(self):
       columns_range = [{ 'min': min(column), 'max': max(column) } for column in zip(*self.data)]
       for row in self.data:
           for i in range(len(row) - 1):
               row[i] = (row[i] - columns_range[i]['min']) / (columns_range[i]['max'] - columns_range[i]['min'])
-  
+
+
   def cross_validation_split(self):
       fold_size = int(len(self.data) / self.n_folds)
       for i in range(self.n_folds):
           fold = self.data[i * fold_size : (i + 1) * fold_size]
           self.folds.append(fold)
-  
+
+
   def train_test_split(self):
       data_length = len(self.data)
       self.train = self.data[:round(data_length * self.train_percent)]
       self.test = self.data[round(data_length * self.train_percent):]
-  
+
+
   def organize(self):
       self.load()
       for i in range(len(self.data[0]) - 1):
@@ -72,24 +77,28 @@ class NeuralNetwork:
       self.output_layer = [{} for i in range(n_output)]
       self.act_func = act_func
       self.derivative = derivative
+      self.n_input = n_input
+      self.n_hidden = n_hidden
+      self.n_output = n_output
 
 
   def initialize(self):
       for neuron in self.hidden_layer:
+          neuron['weights'] = [random() for i in range(self.n_input)]
+          bias = random()
+          neuron['weights'].append(bias)
+      for neuron in self.output_layer:
           neuron['weights'] = [random() for i in range(len(self.hidden_layer))]
           bias = random()
           neuron['weights'].append(bias)
-      for neuron in self.output_layer:
-          neuron['weights'] = [random() for i in range(len(self.output_layer))]
-          bias = random()
-          neuron['weights'].append(bias)
+
 
   def clear_all(self):
       for neuron in self.hidden_layer:
-          neuron = {}
+          neuron.clear()
       for neuron in self.output_layer:
-          neuron = {}
-  
+          neuron.clear()
+
 
   def get_weighted_sum(self, weights, inputs):
       sum = weights[-1]
@@ -111,7 +120,7 @@ class NeuralNetwork:
           neuron['output'] = self.act_func(weighted_sum)
           outputs.append(neuron['output'])
       return outputs
-  
+
 
   def backward_propagate_error(self, expected):
       for j in range(len(self.output_layer)):
@@ -125,6 +134,7 @@ class NeuralNetwork:
           neuron = self.hidden_layer[j]
           neuron['delta'] = error * self.derivative(neuron['output'])
 
+
   def update_weights(self, data_row, l_rate):
       hidden_layer_inputs = data_row[:-1]
       for neuron in self.hidden_layer:
@@ -137,28 +147,45 @@ class NeuralNetwork:
               neuron['weights'][j] -= l_rate * neuron['delta'] * output_layer_inputs[j]
           neuron['weights'][-1] -= l_rate * neuron['delta']
 
+
   def train(self, train_set, l_rate, n_epoch, n_outputs):
       for epoch in range(n_epoch):
           for data_row in train_set:
-              outputs = self.forward_propagate(data_row)
+              self.forward_propagate(data_row)
               expected = [0 for i in range(n_outputs)]
               expected[data_row[-1]] = 1
               self.backward_propagate_error(expected)
               self.update_weights(data_row, l_rate)
 
-def accuracy_metric(actual, guessed):
+
+def evaluate_results(actual, guessed):
     correct = 0
+    close = {}
+
     for i in range(len(actual)):
         if actual[i] == guessed[i]:
             correct += 1
-    return correct / float(len(actual)) * 100.0  
-   
-def main():
-    filename = 'winequality-white.csv'
-    dataset = Dataset(filename, cross=True, n_folds=5)
+        else:
+            closeness = abs(actual[i] - guessed[i])
+            if not closeness in close:
+                close[closeness] = 0
+            close[closeness] += 1
+    
+    percent_correct = correct / float(len(actual)) * 100.0
+    percents_close = { k: v / float(len(actual)) * 100.0 for k, v in close.items() }
+    return percent_correct, percents_close
+
+
+def get_dataset(*args, **kwargs):
+    dataset = Dataset(*args, **kwargs)
     dataset.organize()
     n_inputs = len(dataset.data[0]) - 1
     n_outputs = len(dataset.classnames_map)
+    return dataset, n_inputs, n_outputs
+
+def main():
+    filename = 'winequality-white.csv'
+    dataset, n_inputs, n_outputs = get_dataset(filename, cross=True, n_folds=5)
 
     network = NeuralNetwork(n_inputs, 8, n_outputs, sigmoid_act_func, sigmoid_derivative)
 
@@ -183,7 +210,7 @@ def main():
             guesses.append(guess)
 
         actual = [row[-1] for row in fold]
-        accuracy = accuracy_metric(actual, guesses)
+        accuracy, close_guesses = evaluate_results(actual, guesses)
         scores.append(accuracy)
         network.clear_all()
     
