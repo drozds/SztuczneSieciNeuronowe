@@ -4,6 +4,68 @@ from random import random
 from csv import reader
 from math import exp
 
+class Dataset:
+  def __init__(self, filename, train_percent = 0.6, cross = False, n_folds = 0):
+      self.data = []
+      self.classnames_map = {}
+      self.filename = filename
+      self.cross = cross
+      if cross:
+          self.n_folds = n_folds
+          self.folds = []
+      else:
+          self.train_percent = train_percent
+          self.train = []
+          self.test = []
+
+  def load(self):
+      with open(self.filename, 'r') as file:
+          csv_reader = reader(file, delimiter=';')
+          for index, row in enumerate(csv_reader):
+              if index == 0:
+                  continue
+              if not row:
+                  continue
+              self.data.append(row)
+
+  def normalize(self):
+      columns_range = [{ 'min': min(column), 'max': max(column) } for column in zip(*self.data)]
+      for row in self.data:
+          for i in range(len(row) - 1):
+              row[i] = (row[i] - columns_range[i]['min']) / (columns_range[i]['max'] - columns_range[i]['min'])
+  
+  def cross_validation_split(self):
+      fold_size = int(len(self.data) / self.n_folds)
+      for i in range(self.n_folds):
+          fold = self.data[i * fold_size : (i + 1) * fold_size]
+          self.folds.append(fold)
+  
+  def train_test_split(self):
+      data_length = len(self.data)
+      self.train = self.data[:round(data_length * self.train_percent)]
+      self.test = self.data[round(data_length * self.train_percent):]
+  
+  def organize(self):
+      self.load()
+      for i in range(len(self.data[0]) - 1):
+          for row in self.data:
+              row[i] = float(row[i].strip())
+      class_values = set([row[-1] for row in self.data])
+      for i, value in enumerate(class_values):
+          self.classnames_map[value] = i
+      for row in self.data:
+          row[-1] = self.classnames_map[row[-1]]
+      self.normalize()
+      if self.cross:
+          self.cross_validation_split()
+      else:
+          self.train_test_split()
+
+      
+
+sigmoid_act_func = lambda x: 1.0 / (1.0 + exp(-x))
+sigmoid_derivative = lambda x: x * (1 - x)
+
 class NeuralNetwork:
   def __init__(self, n_input, n_hidden, n_output, act_func, derivative):
       self.hidden_layer = [{} for i in range(n_hidden)]
@@ -13,233 +75,121 @@ class NeuralNetwork:
 
 
   def initialize(self):
-    for neuron in self.hidden_layer:
-        neuron['weights'] = [random() for i in range(len(self.hidden_layer))]
-        bias = random()
-        neuron['weights'].append(bias)
-    for neuron in self.output_layer:
-        neuron['weights'] = [random() for i in range(len(self.output_layer))]
-        bias = random()
-        neuron['weights'].append(bias)
+      for neuron in self.hidden_layer:
+          neuron['weights'] = [random() for i in range(len(self.hidden_layer))]
+          bias = random()
+          neuron['weights'].append(bias)
+      for neuron in self.output_layer:
+          neuron['weights'] = [random() for i in range(len(self.output_layer))]
+          bias = random()
+          neuron['weights'].append(bias)
+
+  def clear_all(self):
+      for neuron in self.hidden_layer:
+          neuron = {}
+      for neuron in self.output_layer:
+          neuron = {}
   
 
   def get_weighted_sum(self, weights, inputs):
-    sum = weights[-1]
-    for i in range(len(weights) - 1):
-        sum += weights[i] * inputs[i]
-    return sum
+      sum = weights[-1]
+      for i in range(len(weights) - 1):
+          sum += weights[i] * inputs[i]
+      return sum
 
 
   def forward_propagate(self, data_row):
-    hidden_layer_inputs = data_row
-    output_layer_inputs = []
-    outputs = []
-    for neuron in self.hidden_layer:
-        weighted_sum = self.get_weighted_sum(neuron['weights'], hidden_layer_inputs)
-        neuron['output'] = self.act_func(weighted_sum)
-        output_layer_inputs.append(neuron['output'])
-    for neuron in self.output_layer:
-        weighted_sum = self.get_weighted_sum(neuron['weights'], output_layer_inputs)
-        neuron['output'] = self.act_func(weighted_sum)
-        outputs.append(neuron['output'])
-    return outputs
+      hidden_layer_inputs = data_row
+      output_layer_inputs = []
+      outputs = []
+      for neuron in self.hidden_layer:
+          weighted_sum = self.get_weighted_sum(neuron['weights'], hidden_layer_inputs)
+          neuron['output'] = self.act_func(weighted_sum)
+          output_layer_inputs.append(neuron['output'])
+      for neuron in self.output_layer:
+          weighted_sum = self.get_weighted_sum(neuron['weights'], output_layer_inputs)
+          neuron['output'] = self.act_func(weighted_sum)
+          outputs.append(neuron['output'])
+      return outputs
   
 
   def backward_propagate_error(self, expected):
-    for j in range(len(self.output_layer)):
-        neuron = self.output_layer[j]
-        error = neuron['output'] - expected[j]
-        neuron['delta'] = error * self.derivative(neuron['output'])
-    for j in range(len(self.hidden_layer)):
-        error = 0.0
-        for neuron in self.output_layer:
-            error += (neuron['weights'][j] * neuron['delta'])
-        neuron = self.hidden_layer[j]
-        neuron['delta'] = error * self.derivative(neuron['output'])
+      for j in range(len(self.output_layer)):
+          neuron = self.output_layer[j]
+          error = neuron['output'] - expected[j]
+          neuron['delta'] = error * self.derivative(neuron['output'])
+      for j in range(len(self.hidden_layer)):
+          error = 0.0
+          for neuron in self.output_layer:
+              error += (neuron['weights'][j] * neuron['delta'])
+          neuron = self.hidden_layer[j]
+          neuron['delta'] = error * self.derivative(neuron['output'])
 
-  # Todo
-  def update_weights(row, l_rate):
-    for i in range(len(network)):
-        inputs = row[:-1]
-        if i != 0:
-            inputs = [neuron['output'] for neuron in network[i - 1]]
-        for neuron in network[i]:
-            for j in range(len(inputs)):
-                neuron['weights'][j] -= l_rate * neuron['delta'] * inputs[j]
-            neuron['weights'][-1] -= l_rate * neuron['delta']
+  def update_weights(self, data_row, l_rate):
+      hidden_layer_inputs = data_row[:-1]
+      for neuron in self.hidden_layer:
+          for j in range(len(hidden_layer_inputs)):
+              neuron['weights'][j] -= l_rate * neuron['delta'] * hidden_layer_inputs[j]
+          neuron['weights'][-1] -= l_rate * neuron['delta']
+      output_layer_inputs = [neuron['output'] for neuron in self.hidden_layer]
+      for neuron in self.output_layer:
+          for j in range(len(output_layer_inputs)):
+              neuron['weights'][j] -= l_rate * neuron['delta'] * output_layer_inputs[j]
+          neuron['weights'][-1] -= l_rate * neuron['delta']
 
+  def train(self, train_set, l_rate, n_epoch, n_outputs):
+      for epoch in range(n_epoch):
+          for data_row in train_set:
+              outputs = self.forward_propagate(data_row)
+              expected = [0 for i in range(n_outputs)]
+              expected[data_row[-1]] = 1
+              self.backward_propagate_error(expected)
+              self.update_weights(data_row, l_rate)
 
-def load_csv(filename):
-    dataset = list()
-    with open(filename, 'r') as file:
-        csv_reader = reader(file, delimiter=';')
-        for index, row in enumerate(csv_reader):
-            if index == 0:
-                continue
-            if not row:
-                continue
-            dataset.append(row)
-    return dataset
-
-
-def str_column_to_float(dataset, column):
-    for row in dataset:
-        row[column] = float(row[column].strip())
-
-
-def str_column_to_int(dataset, column):
-    class_values = [row[column] for row in dataset]
-    unique = set(class_values)
-    lookup = dict()
-    for i, value in enumerate(unique):
-        lookup[value] = i
-    for row in dataset:
-        row[column] = lookup[row[column]]
-    return lookup
-
-
-def dataset_minmax(dataset):
-    stats = [[min(column), max(column)] for column in zip(*dataset)]
-    return stats
-
-
-def normalize_dataset(dataset, minmax):
-    for row in dataset:
-        for i in range(len(row) - 1):
-            row[i] = (row[i] - minmax[i][0]) / (minmax[i][1] - minmax[i][0])
-
-
-def cross_validation_split(dataset, n_folds):
-    dataset_split = list()
-    dataset_copy = list(dataset)
-    fold_size = int(len(dataset) / n_folds)
-    for i in range(n_folds):
-        fold = list()
-        while len(fold) < fold_size:
-            index = randrange(len(dataset_copy))
-            fold.append(dataset_copy.pop(index))
-        dataset_split.append(fold)
-    return dataset_split
-
-
-def accuracy_metric(actual, predicted):
+def accuracy_metric(actual, guessed):
     correct = 0
     for i in range(len(actual)):
-        if actual[i] == predicted[i]:
+        if actual[i] == guessed[i]:
             correct += 1
-    return correct / float(len(actual)) * 100.0
+    return correct / float(len(actual)) * 100.0  
+   
+def main():
+    filename = 'winequality-white.csv'
+    dataset = Dataset(filename, cross=True, n_folds=5)
+    dataset.organize()
+    n_inputs = len(dataset.data[0]) - 1
+    n_outputs = len(dataset.classnames_map)
 
+    network = NeuralNetwork(n_inputs, 8, n_outputs, sigmoid_act_func, sigmoid_derivative)
 
-def evaluate_algorithm(dataset, algorithm, n_folds, *args):
-    folds = cross_validation_split(dataset, n_folds)
-    scores = list()
-    for fold in folds:
-        train_set = list(folds)
+    scores = []
+
+    for fold in dataset.folds:
+        train_set = list(dataset.folds)
         train_set.remove(fold)
         train_set = sum(train_set, [])
-        test_set = list()
+        test_set = []
         for row in fold:
             row_copy = list(row)
             test_set.append(row_copy)
             row_copy[-1] = None
-        predicted = algorithm(train_set, test_set, *args)
+        
+        network.initialize()
+        network.train(train_set, l_rate=0.1, n_epoch=10, n_outputs=n_outputs)
+        guesses = []
+        for row in test_set:
+            outputs = network.forward_propagate(row)
+            guess = outputs.index(max(outputs))
+            guesses.append(guess)
+
         actual = [row[-1] for row in fold]
-        accuracy = accuracy_metric(actual, predicted)
+        accuracy = accuracy_metric(actual, guesses)
         scores.append(accuracy)
-    return scores
+        network.clear_all()
+    
+    print('Scores: %s' % scores)
+    print('Mean Accuracy: %.3f%%' % (sum(scores) / float(len(scores))))
 
-
-def activate(weights, inputs):
-    activation = weights[-1]
-    for i in range(len(weights) - 1):
-        activation += weights[i] * inputs[i]
-    return activation
-
-
-def transfer(activation):
-    return 1.0 / (1.0 + exp(-activation))
-
-
-def forward_propagate(network, row):
-    inputs = row
-    for layer in network:
-        new_inputs = []
-        for neuron in layer:
-            activation = activate(neuron['weights'], inputs)
-            neuron['output'] = transfer(activation)
-            new_inputs.append(neuron['output'])
-        inputs = new_inputs
-    return inputs
-
-
-def transfer_derivative(output):
-    return output * (1.0 - output)
-
-
-
-
-
-
-
-def train_network(network, train, l_rate, n_epoch, n_outputs):
-    for epoch in range(n_epoch):
-        for row in train:
-            outputs = forward_propagate(network, row)
-            expected = [0 for i in range(n_outputs)]
-            expected[row[-1]] = 1
-            backward_propagate_error(network, expected)
-            update_weights(network, row, l_rate)
-
-
-def initialize_network(n_inputs, n_hidden, n_outputs):
-    network = list()
-    hidden_layer = [{
-        'weights': [random() for i in range(n_inputs + 1)]
-    } for i in range(n_hidden)]
-    network.append(hidden_layer)
-    output_layer = [{
-        'weights': [random() for i in range(n_hidden + 1)]
-    } for i in range(n_outputs)]
-    network.append(output_layer)
-    return network
-
-
-def predict(network, row):
-    outputs = forward_propagate(network, row)
-    return outputs.index(max(outputs))
-
-
-def back_propagation(train, test, l_rate, n_epoch, n_hidden):
-    n_inputs = len(train[0]) - 1
-    n_outputs = len(set([row[-1] for row in train]))
-    network = initialize_network(n_inputs, n_hidden, n_outputs)
-    train_network(network, train, l_rate, n_epoch, n_outputs)
-    predictions = list()
-    for row in test:
-        prediction = predict(network, row)
-        predictions.append(prediction)
-    return (predictions)
-
-
-def main():
-  seed(1)
-  filename = 'winequality-white.csv'
-  dataset = load_csv(filename)
-  for i in range(len(dataset[0]) - 1):
-      str_column_to_float(dataset, i)
-  # str_column_to_int(dataset, len(dataset[0]) - 1)
-  # print(dataset)
-  minmax = dataset_minmax(dataset)
-  # print(minmax)
-  # normalize_dataset(dataset, minmax)
-  # n_folds = 5
-  # l_rate = 0.5
-  # n_epoch = 10
-  # n_hidden = 1
-  # scores = evaluate_algorithm(dataset, back_propagation, n_folds, l_rate,
-  #                             n_epoch, n_hidden)
-  # print('Scores: %s' % scores)
-  # print('Mean Accuracy: %.3f%%' % (sum(scores) / float(len(scores))))
 
 if __name__ == '__main__':
   main()
