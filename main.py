@@ -55,7 +55,8 @@ class Dataset:
       for i in range(len(self.data[0]) - 1):
           for row in self.data:
               row[i] = float(row[i].strip())
-      class_values = set([row[-1] for row in self.data])
+      class_values = list(set([row[-1] for row in self.data]))
+      class_values.sort()
       for i, value in enumerate(class_values):
           self.classnames_map[value] = i
       for row in self.data:
@@ -190,6 +191,7 @@ def main():
     network = NeuralNetwork(n_inputs, 8, n_outputs, sigmoid_act_func, sigmoid_derivative)
 
     scores = []
+    errors_of_one = []
 
     for fold in dataset.folds:
         train_set = list(dataset.folds)
@@ -202,7 +204,7 @@ def main():
             row_copy[-1] = None
         
         network.initialize()
-        network.train(train_set, l_rate=0.1, n_epoch=10, n_outputs=n_outputs)
+        network.train(train_set, l_rate=0.5, n_epoch=100, n_outputs=n_outputs)
         guesses = []
         for row in test_set:
             outputs = network.forward_propagate(row)
@@ -212,10 +214,12 @@ def main():
         actual = [row[-1] for row in fold]
         accuracy, close_guesses = evaluate_results(actual, guesses)
         scores.append(accuracy)
+        errors_of_one.append(close_guesses[1])
         network.clear_all()
     
     print('Scores: %s' % scores)
     print('Mean Accuracy: %.3f%%' % (sum(scores) / float(len(scores))))
+    print('Close guesses (error of 1 point): %.3f%%' % (sum(errors_of_one) / float(len(errors_of_one))))
 
 
 if __name__ == '__main__':
