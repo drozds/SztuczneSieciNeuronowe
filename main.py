@@ -217,8 +217,8 @@ def main():
         errors_of_one.append(close_guesses[1])
         network.clear_all()
     
-    print('Scores: %s' % scores)
-    print('Mean Accuracy: %.3f%%' % (sum(scores) / float(len(scores))))
+    print('Accuracies: %s' % scores)
+    print('Average value: %.3f%%' % (sum(scores) / float(len(scores))))
     print('Close guesses (error of 1 point): %.3f%%' % (sum(errors_of_one) / float(len(errors_of_one))))
 
 
